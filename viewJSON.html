@@ -1,0 +1,219 @@
+<html>
+
+<head>
+  <title>View JSON - justPLACE</title>
+  <style>
+    table {
+      box-shadow: 1px 1px 10px rgba(0, 0, 0, 0.5);
+      border-collapse: collapse;
+      border-spacing: 0;
+    }
+
+    table,
+    td,
+    th {
+      padding: 7px;
+      border: 1px solid rgb(8, 48, 107);
+      background-color: lightgray;
+      color: black;
+      margin-top: 6px;
+    }
+
+    th {
+      background-color: rgb(8, 81, 156);
+      color: white;
+    }
+
+    .simple td {
+      background-color: #b8b8b8
+    }
+
+    .open td {
+      background-color: white;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+  <script src="https://unpkg.com/array-flat-polyfill"></script>
+  <script language="javascript">
+    function view(parent = document.getElementById("view"), json = JSON.parse(document.getElementById("json").value)) {
+      const entries = Object.entries(json);
+      if (entries.length === 0) {
+        const pre = document.createElement("pre");
+        pre.innerText = JSON.stringify(json);
+        parent.parentElement.className = "simple";
+        return parent.appendChild(pre);
+      }
+      const groups = {};
+      const quantities = {};
+      const objEntries = entries.filter(([key, value]) => ["{", "["].indexOf(JSON.stringify(value)[0]) !== -1);
+      objEntries.forEach(([key, value]) => {
+        const props = Object.entries(value)
+          .filter(([_, value]) => ["{", "["].indexOf(JSON.stringify(value)[0]) === -1)
+          .map(([key]) => key);
+        const quantity = Math.max(0, ...Object.entries(quantities).map(([key, value]) => props.indexOf(key) !== -1 ?
+          value : 0)) + 1;
+        const group = [...new Set([
+          ...props,
+          ...Object.entries(groups).map(([key, value]) => props.indexOf(key) !== -1 ?
+            value : []).flat()
+        ])];
+        group.forEach(prop => {
+          quantities[prop] = quantity;
+          groups[prop] = group;
+        });
+      });
+      const obj = JSON.stringify(json)[0] === "{";
+      const inTable = [];
+      const validGroupEntries = Object.entries(groups).filter(([prop, group]) => group.length <= 4 || quantities[prop] > 1);
+      const validProps = validGroupEntries.map(([prop]) => prop);
+      const validGroups = validGroupEntries.map(([_, group]) => group);
+      new Set(validGroups).forEach(group => {
+        const isArray = group.reduce((isArray, i) => isArray = isArray && !isNaN(i), true);
+        const multiple = quantities[validProps[validGroups.indexOf(group)]] > 1;
+        const groupObjEntries = objEntries.filter(([key, value]) => {
+          const primitiveKeys = Object.keys(value).filter(key => ["{", "["].indexOf(JSON.stringify(value[key])[0]) === -1);
+          const props = new Set([
+            ...primitiveKeys,
+            ...group
+          ]).size;
+          return props < group.length + primitiveKeys.length;
+        });
+        const header = document.createElement("tr");
+        [
+          ...(obj ? (isArray ? ["index"] : ["property"]) : []),
+          ...(isArray ? groupObjEntries.map(([key]) => key) : group)
+        ].forEach(prop => {
+          const preHeader = document.createElement("pre");
+          preHeader.innerText = typeof prop === "string" && prop.trim().length > 0 ? prop : JSON.stringify(prop);
+          const propHeader = document.createElement("th");
+          propHeader.appendChild(preHeader);
+          header.appendChild(propHeader);
+        })
+        const table = document.createElement("table");
+        table.appendChild(header);
+        const rows = [];
+        groupObjEntries.forEach(([key, value], i) => {
+          inTable.push(key);
+          group.forEach((prop, j) => {
+            let row = rows[isArray ? j : i];
+            if (!row) {
+              row = rows[isArray ? j : i] = document.createElement("tr");
+              if (isArray) {
+                row.className = "simple";
+              }
+              if (obj) {
+                const pre = document.createElement("pre");
+                if (isArray) {
+                  pre.innerText = prop;
+                } else {
+                  pre.innerText = typeof key === "string" && key.trim().length > 0 ? key : JSON.stringify(key);
+                }
+                const cell = document.createElement("td");
+                cell.appendChild(pre);
+                row.appendChild(cell);
+              }
+              table.appendChild(row);
+            }
+            const cell = document.createElement("td");
+            if (value[prop] !== undefined) {
+              const pre = document.createElement("pre");
+              pre.innerText = typeof value[prop] === "string" &&
+                value[prop].trim().length > 0 ?
+                value[prop] : (value[prop] === undefined ? "undefined" : JSON.stringify(value[prop]));
+              cell.appendChild(pre);
+              delete value[prop];
+            }
+            row.appendChild(cell);
+          });
+          if (Object.keys(value).length > 0) {
+            let subTable;
+            let row;
+            if (isArray) {
+              const propCell = document.createElement("cell");
+              propCell.innerText = typeof key === "string" && key.trim().length > 0 ? key : JSON.stringify(key);
+              row = document.createElement("tr");
+              row.appendChild(propCell);
+              subTable = document.createElement("table");
+              subTable.appendChild(row);
+            } else {
+              subTable = table;
+              row = rows[i];
+            }
+            const subRow = document.createElement("tr");
+            if (multiple) {
+              subRow.className = "hidden";
+            } else {
+              row.className = "open";
+            }
+            row.onclick = () => {
+              if (row.className !== "open") {
+                row.className = "open";
+                subRow.className = subRow.firstChild.childElementCount > 1 || subRow.firstChild.firstChild.childElementCount > 1 ? "" : "simple";
+              } else {
+                row.className = "";
+                subRow.className = "hidden";
+              }
+            };
+            const subCell = document.createElement("td");
+            subRow.appendChild(subCell);
+            subCell.colSpan = group.length + (obj ? 1 : 0);
+            view(subCell, value);
+            table.appendChild(subRow);
+          } else {
+            if (!isArray) {
+              rows[i].className = "simple";
+            }
+          }
+        });
+        parent.appendChild(table);
+      });
+      entries.forEach(([key, value]) => {
+        if (inTable.indexOf(key) === -1) {
+          const keyPre = document.createElement("pre");
+          keyPre.innerText = typeof key === "string" && key.trim().length > 0 ? key : JSON.stringify(key);
+          const keyCell = document.createElement("td");
+          keyCell.appendChild(keyPre);
+          const keyRow = document.createElement("tr");
+          keyRow.className = "open";
+          keyRow.appendChild(keyCell);
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          row.appendChild(cell);
+          if (["{", "["].indexOf(JSON.stringify(value)[0]) !== -1) {
+            view(cell, value);
+          } else {
+            const pre = document.createElement("pre");
+            pre.innerText = typeof value === "string" && value.trim().length > 0 ? value : JSON.stringify(value);
+            cell.appendChild(pre);
+            row.className = "simple";
+          }
+          keyRow.onclick = () => {
+            if (keyRow.className !== "open") {
+              keyRow.className = "open";
+              row.className = row.firstChild.childElementCount > 1 || row.firstChild.firstChild.childElementCount > 1 ? "" : "simple";
+            } else {
+              keyRow.className = "";
+              row.className = "hidden";
+            }
+          };
+          const table = document.createElement("table");
+          table.appendChild(keyRow);
+          table.appendChild(row);
+          parent.appendChild(table);
+        }
+      });
+    }
+  </script>
+</head>
+
+<body>
+  <textarea id="json" name="json" cols="50" rows="10"></textarea><br />
+  <input type="button" value="View" onClick="document.getElementById('view').innerHTML = ''; view()"
+    style="width: 423px" />
+  <div id="view" style="cursor: default;" onselectstart="return false"></div>
+</body>
+
+</html>
